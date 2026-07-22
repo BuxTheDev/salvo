@@ -283,16 +283,20 @@ export default function Salvo() {
         {showMapper && (
           <div className="sv-map">
             <div className="sv-map-grid">
-              {FIELD_ORDER.map((f) => (
+              {FIELD_ORDER.map((f) => {
+                const ownerFullDerived = f === "owner_full" && !mapping.owner_full && !!(mapping.owner_first || mapping.owner_last);
+                return (
                 <label key={f} className={`sv-mf ${SPEC[f].req && !mapping[f] ? "req-miss" : ""}`}>
                   <span className="sv-mf-l">{SPEC[f].label}{SPEC[f].req && <b className="req">*</b>}</span>
                   <select value={mapping[f]?.header || ""} onChange={(e) => setMap(f, e.target.value)}>
-                    <option value="">— none —</option>
+                    <option value="">{ownerFullDerived ? "— first + last —" : "— none —"}</option>
                     {headers.map((h) => <option key={h} value={h}>{h}</option>)}
                   </select>
                   {mapping[f] && <span className={`sv-how ${mapping[f].how}`}>{mapping[f].how === "manual" ? "set" : mapping[f].how === "exact" ? "auto" : "guess"}</span>}
+                  {ownerFullDerived && <span className="sv-how combined" title="Owner full name is combined from owner first + last name">combined</span>}
                 </label>
-              ))}
+                );
+              })}
             </div>
             <label className="sv-enrich">
               <input ref={enrichRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => onEnrich(e.target.files[0])} />
@@ -443,7 +447,7 @@ const css = `
 .sv-mf select:hover{ border-color:#c2c9d1; }
 .sv-mf.req-miss select{ border-color:var(--loss); background:#fdf0ef; }
 .sv-how{ position:absolute; right:6px; top:24px; font-size:8.5px; letter-spacing:.04em; text-transform:uppercase; font-weight:700; padding:1px 5px; border-radius:8px; pointer-events:none; }
-.sv-how.exact{ background:#e3f3ec; color:var(--gain); } .sv-how.fuzzy{ background:var(--gold-soft); color:#b3560f; } .sv-how.manual{ background:#e8eef4; color:var(--steel); }
+.sv-how.exact{ background:#e3f3ec; color:var(--gain); } .sv-how.fuzzy{ background:var(--gold-soft); color:#b3560f; } .sv-how.manual{ background:#e8eef4; color:var(--steel); } .sv-how.combined{ background:#e8eef4; color:var(--steel); }
 .sv-enrich{ display:flex; align-items:center; gap:10px; margin-top:13px; }
 .sv-link2{ background:#f2f4f6; border:1px dashed var(--line); color:var(--steel); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; padding:8px 13px; border-radius:8px; transition:background .12s, border-color .12s; }
 .sv-link2:hover{ background:#e9edf1; border-color:#c2c9d1; }
