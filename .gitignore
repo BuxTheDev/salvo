@@ -9,3 +9,6 @@ __pycache__/
 
 # Engine demo outputs
 examples/out_*.csv
+
+# Rendered LOI PDFs + manifest
+out/
