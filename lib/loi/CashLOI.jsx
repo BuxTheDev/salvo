@@ -1,6 +1,6 @@
 import React from "react";
 import { Document, Page, View, Text } from "@react-pdf/renderer";
-import { styles as s, BUYER } from "./theme.js";
+import { styles as s, C, BUYER } from "./theme.js";
 
 const Row = ({ label, value, last }) => (
   <View style={last ? s.rowLast : s.row}>
@@ -55,9 +55,13 @@ export default function CashLOI({ d }) {
         <Text style={s.sectionHead}>Proposed Terms</Text>
         <View style={s.table}>
           <Row label="Cash Purchase Price" value={d["Cash Scenario"]} />
-          <Row label="Net Cash to Seller" value={d["Net Cash"]} />
-          <Row label="Estimated Selling Costs Avoided" value={d["Industry Costs"]} last />
+          <Row label="Net Cash to Seller (after loan payoff)" value={d["Net Cash"]} last />
         </View>
+        <Text style={{ fontSize: 8, color: C.ink2, marginTop: -6, marginBottom: 12, lineHeight: 1.4 }}>
+          Selling as-is for cash means no agent commissions or seller-paid selling costs — an estimated {d["Industry Costs"]} in
+          traditional cost-of-sale on an MLS listing. This is a benefit of a direct sale, separate from the cash price above, which
+          reflects a discount for a fast, certain, as-is close.
+        </Text>
 
         <Text style={s.sectionHead}>Key Conditions</Text>
         <Clause>All-cash purchase — no financing contingency.</Clause>

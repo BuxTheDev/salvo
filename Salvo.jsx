@@ -181,7 +181,7 @@ export default function Salvo() {
             <table className="sv-table">
               <thead>
                 {off === "creative" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Rent vs Pmt</th><th>Down</th><th className="hook">SF Difference</th><th>Status</th></tr>)
-                : off === "cash" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Cash Offer</th><th className="hook">Net Cash</th><th>Saved</th><th>Status</th></tr>)
+                : off === "cash" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Cash Offer</th><th className="hook">Net Cash</th><th title="Estimated traditional selling costs (agent commissions, etc.) the seller avoids by selling as-is for cash — not net savings vs. an MLS sale">Costs Avoided</th><th>Status</th></tr>)
                 : (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th className="hook">SF Difference</th><th className="hook">Net Cash</th><th>Offers</th><th>Status</th></tr>)}
               </thead>
               <tbody>
