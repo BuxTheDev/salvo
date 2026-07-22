@@ -85,15 +85,15 @@ async function main() {
   scored.forEach((x) => { if (isReady(x) && x.contact.email) { const k = keyOf(x.contact.email); counts.set(k, (counts.get(k) || 0) + 1); } });
   const dupOf = (x) => (x.contact.email ? counts.get(keyOf(x.contact.email)) || 1 : 1);
 
-  // 2) Expand into one render job per (property x template), honoring --copies.
+  // 2) Expand into one render job per ready property, honoring --copies.
+  //    A creative send is a single combined document (creative + appended cash,
+  //    matching the BrightPath template); a pure-cash row gets the cash LOI.
   const jobs = [];
   const readyRows = scored.filter(isReady);
   for (let copy = 0; copy < args.copies; copy++) {
     for (const x of readyRows) {
-      const templates = offer === "creative" ? ["creative"] : offer === "cash" ? ["cash"] : [
-        ...(x.creativeOK ? ["creative"] : []), ...(x.cashOK ? ["cash"] : []),
-      ];
-      for (const t of templates) jobs.push({ x, template: t, copy });
+      const kind = offer === "cash" ? "cash" : offer === "creative" ? "creative" : (x.creativeOK ? "creative" : "cash");
+      jobs.push({ x, template: kind, copy });
     }
   }
 
@@ -121,7 +121,7 @@ async function main() {
       ? React.createElement(CreativeLOI, { d })
       : React.createElement(CashLOI, { d });
     await renderToFile(element, path.join(outDir, file));
-    return { ...d, "LOI Template": job.template === "creative" ? "Creative" : "Cash", "LOI File": file };
+    return { ...d, "LOI Template": job.template === "creative" ? "Creative + Cash" : "Cash", "LOI File": file };
   });
 
   // 4) Write the clean manifest CSV that references every PDF.
