@@ -44,7 +44,7 @@ export function normalizeWithMap(rows: Record<string, unknown>[], map: FieldMap)
       if (header) item[field] = numeric.has(field) ? number(row[header]) : String(row[header] ?? "").trim() || undefined;
     }
     if (!item.owner_full) item.owner_full = [item.owner_first, item.owner_last].filter(Boolean).join(" ") || undefined;
-    return item as Property;
+    return item as unknown as Property;
   }).filter(row => Boolean(row.address));
 }
 
