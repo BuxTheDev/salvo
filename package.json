@@ -1,0 +1,43 @@
+{
+  "name": "salvo",
+  "version": "1.0.0",
+  "description": "Real-estate offer intelligence engine",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BuxTheDev/salvo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/BuxTheDev/salvo/issues"
+  },
+  "homepage": "https://github.com/BuxTheDev/salvo#readme",
+  "dependencies": {
+    "lucide-react": "^1.25.0",
+    "next": "^16.2.11",
+    "papaparse": "^5.5.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.1.1",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "eslint": "^10.7.0",
+    "eslint-config-next": "^16.2.11",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  }
+}
