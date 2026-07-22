@@ -1,36 +1,77 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Salvo — fire the whole list
 
-## Getting Started
+Salvo is a real-estate **offer-intelligence engine**. It ingests a property list
+(PropStream / PropWire / BatchLeads / any CSV), underwrites a **creative-finance**
+and a **cash** offer for every property, and generates personalized Letters of
+Intent (LOIs) at volume — either to the listing **agent** (Direct-to-Agent) or the
+**owner** (Direct-to-Seller, via skip-trace enrichment).
 
-First, run the development server:
+Salvo is **not a CRM**. Its job is: **analyze → calculate → generate → hand off.**
+It outputs either (a) a GoHighLevel-mapped CSV or (b) a rendered LOI PDF.
+
+The persuasion hook is the **Seller Finance Difference**: how much more a seller
+nets selling creatively vs. a traditional MLS sale after ~12% selling costs. That
+number is the sort key and the headline of every creative LOI.
+
+**Buyer entity on all offers:** BrightPath Real Estate Solutions, LLC (and/or assigns).
+
+---
+
+## What's implemented
+
+This build covers the spec's Phases 0–3 as a fully client-side, self-contained app
+(no external credentials required to run):
+
+- **Pure engine** (`src/lib/engine/`, framework-free, unit-tested) — runs identically
+  in the browser and on the server:
+  - `underwrite.ts` — the exact underwriting math (creative + cash) and contact resolution.
+  - `mapper.ts` — smart CSV header → canonical field mapping (exact-then-fuzzy),
+    file classification (`base` / `enrichment` / `incomplete`).
+  - `normalize.ts` — normalization, DNC-aware phone selection, skip-trace enrichment join.
+  - `select.ts` — Target × Offer modes, readiness, sort keys, contactability,
+    DNC + duplicate-contact flags.
+  - `export.ts` — the GHL-mapped CSV contract (text-safe phones, mode-aware columns).
+  - `loi.ts` / `format.ts` — LOI merge-field contract and currency formatting (`fcT`/`fcS`).
+- **`/import`** — smart-map review with a per-field mapping grid (auto/guess/set tags),
+  file-kind badge, required-field validation, and optional enrichment upload.
+- **`/offers`** — the console: color-coded Target (steel) / Offer (orange) controls,
+  tunable underwriting settings, a stat strip, a mode-aware results table with ×N
+  duplicate and DNC badges, a reachable-only filter, GHL CSV export, batch PDF
+  generation, and a GHL payload preview.
+- **`/templates`** — live LOI preview against a sample deal.
+- **LOI PDF** (`@react-pdf/renderer`) — Creative (Subject-To + Seller Finance) and Cash
+  templates in the BrightPath layout; creative sends can include the cash page (configurable).
+
+### Deferred (need credentials / external services)
+
+Phases 4–5 are structured for but not wired, since they require secrets:
+Supabase persistence + RLS, the GoHighLevel API push (contact upsert, custom fields,
+opportunity, workflow trigger, suppression + backoff), Resend email, campaign history,
+and the single-deal Offer Builder (`/offers/[id]`).
+
+---
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `/import`, click **load a sample PropStream list** (or upload your own CSV),
+review the mapping, then **Load into console** to underwrite and export.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run dev      # dev server
+npm run build    # production build
+npm run start    # serve production build
+npm run lint     # eslint
+npm run test     # vitest (engine math, mapping, dedupe, export, PDF render)
+```
 
-## Learn More
+## Tech stack
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js (App Router) · TypeScript · Tailwind v4 · `@react-pdf/renderer` · `papaparse` ·
+Vitest. Design system "Ordnance": Space Grotesk (UI) + IBM Plex Mono (data).
