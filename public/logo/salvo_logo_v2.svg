@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 96" width="360" height="96">
+  <g transform="translate(8,8)">
+    <path d="M40 4a36 36 0 0 1 36 36c0 7.6-2.1 14.8-5.9 20.9" fill="none" stroke="#e86a2a" stroke-width="6" stroke-linecap="round"/>
+    <path d="M40 4A36 36 0 0 0 4 40c0 7.6 2.1 14.8 5.9 20.9" fill="none" stroke="#e86a2a" stroke-width="6" stroke-linecap="round"/>
+    <ellipse cx="27" cy="72" rx="7" ry="4" fill="#1b2228" opacity="0.35"/>
+    <ellipse cx="41" cy="78" rx="8.6" ry="5" fill="#1b2228" opacity="0.5"/>
+    <ellipse cx="55" cy="70" rx="6.2" ry="3.6" fill="#1b2228" opacity="0.3"/>
+    <path d="M40 10c7.4 6.6 11.6 17.4 11.6 29.4 0 8.3-2.1 16-5.6 22l-6 7-6-7c-3.5-6-5.6-13.7-5.6-22C28.4 27.4 32.6 16.6 40 10Z" fill="#1b2228"/>
+    <path d="M28.4 47.5c-5 1.2-8.7 4.8-10.4 9.5 5-.4 9.1-2 12.2-4.9Z" fill="#1b2228"/>
+    <path d="M51.6 47.5c5 1.2 8.7 4.8 10.4 9.5-5-.4-9.1-2-12.2-4.9Z" fill="#1b2228"/>
+    <path d="M40 17 44.6 32h-9.2L40 17Z" fill="#ffffff"/>
+  </g>
+  <text x="100" y="56" font-family="'Space Grotesk', Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="7" fill="#1b2228">SALVO</text>
+  <text x="101" y="76" font-family="'Space Grotesk', Arial, sans-serif" font-size="12" letter-spacing="1" fill="#4a5560">fire the whole list.</text>
+</svg>

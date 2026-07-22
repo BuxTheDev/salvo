@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------- */
+/* Salvo design system — "Ordnance" palette (see build spec §10)          */
+/* ---------------------------------------------------------------------- */
+
+:root {
+  --color-ink: #1b2228;
+  --color-ink-2: #4a5560;
+  --color-canvas: #eceef1;
+  --color-panel: #ffffff;
+  --color-line: #d6dbe0;
+  --color-gold: #e86a2a;
+  --color-gold-2: #f4854a;
+  --color-steel: #356886;
+  --color-steel-2: #4a86ab;
+  --color-gain: #147a54;
+  --color-loss: #c0392b;
+  --color-warn: #c08a2d;
+
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
+}
+
+@theme inline {
+  --color-ink: var(--color-ink);
+  --color-ink-2: var(--color-ink-2);
+  --color-canvas: var(--color-canvas);
+  --color-panel: var(--color-panel);
+  --color-line: var(--color-line);
+  --color-gold: var(--color-gold);
+  --color-gold-2: var(--color-gold-2);
+  --color-steel: var(--color-steel);
+  --color-steel-2: var(--color-steel-2);
+  --color-gain: var(--color-gain);
+  --color-loss: var(--color-loss);
+  --color-warn: var(--color-warn);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-ibm-plex-mono);
+
+  --shadow-panel: 0 1px 3px rgba(20, 30, 40, 0.05);
+  --shadow-outer: 0 8px 30px rgba(20, 30, 40, 0.08);
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-mono-data {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.wordmark {
+  letter-spacing: 0.22em;
+}
+
+::selection {
+  background: var(--color-gold);
+  color: white;
+}
