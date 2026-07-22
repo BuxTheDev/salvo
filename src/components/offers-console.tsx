@@ -10,7 +10,6 @@ import {
   Search,
   Send,
   SlidersHorizontal,
-  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -101,19 +100,22 @@ export function OffersConsole() {
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    const stored = localStorage.getItem("salvo-properties");
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Property[];
-        if (parsed.length) {
-          setProperties(parsed);
-          setSelected(new Set(parsed.map((item) => item.id ?? item.address)));
+    const loadStoredImport = window.setTimeout(() => {
+      const stored = localStorage.getItem("salvo-properties");
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as Property[];
+          if (parsed.length) {
+            setProperties(parsed);
+            setSelected(new Set(parsed.map((item) => item.id ?? item.address)));
+          }
+        } catch {
+          localStorage.removeItem("salvo-properties");
         }
-      } catch {
-        localStorage.removeItem("salvo-properties");
       }
-    }
-    setSource(localStorage.getItem("salvo-source") ?? "phoenix-propstream-demo.csv");
+      setSource(localStorage.getItem("salvo-source") ?? "phoenix-propstream-demo.csv");
+    }, 0);
+    return () => window.clearTimeout(loadStoredImport);
   }, []);
 
   const rows = useMemo<ConsoleRow[]>(() => {
@@ -143,7 +145,11 @@ export function OffersConsole() {
     return text.includes(query.toLowerCase());
   }), [rows, reachableOnly, query]);
 
-  const selectedRows = rows.filter((row) => selected.has(row.property.id ?? row.property.address));
+  const selectedRows = rows.filter(
+    (row) =>
+      selected.has(row.property.id ?? row.property.address) &&
+      (!reachableOnly || row.reachable),
+  );
   const creativeCount = rows.filter((row) => row.result.creative_ok).length;
   const cashCount = rows.filter((row) => row.result.cash_ok).length;
   const reachableCount = rows.filter((row) => row.reachable).length;

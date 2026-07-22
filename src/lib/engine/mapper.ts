@@ -26,7 +26,26 @@ export const FIELD_SYNONYMS: Record<CanonicalField, string[]> = {
   owner_email: ["email1", "owneremail", "emailaddress", "email"],
 };
 
-export const FIELD_ORDER = Object.keys(FIELD_SYNONYMS) as CanonicalField[];
+export const FIELD_ORDER: CanonicalField[] = [
+  "address",
+  "city",
+  "state",
+  "zip",
+  "owner_full",
+  "owner_first",
+  "owner_last",
+  "home_value",
+  "loan_balance",
+  "equity",
+  "monthly_rent",
+  "loan_payment",
+  "asking",
+  "agent_name",
+  "agent_email",
+  "agent_phone",
+  "owner_cell",
+  "owner_email",
+];
 export const REQUIRED_FIELDS: CanonicalField[] = ["address", "home_value"];
 export const NUMERIC_FIELDS = new Set<CanonicalField>([
   "home_value",
@@ -155,10 +174,10 @@ export function normalizeWithMap(rows: CsvRow[], mapping: Mapping): Property[] {
       }
     }
 
-    property.owner_full =
-      property.owner_full ??
-      [property.owner_first, property.owner_last].filter(Boolean).join(" ") ??
-      undefined;
+    const derivedOwnerName = [property.owner_first, property.owner_last]
+      .filter(Boolean)
+      .join(" ");
+    property.owner_full = property.owner_full || derivedOwnerName || undefined;
     const phone = dncPhone(row);
     if (phone) {
       property.owner_cell = phone.phone;
