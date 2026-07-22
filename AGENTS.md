@@ -13,6 +13,7 @@ The full Next.js app described in `SALVO_BUILD.md` is **not scaffolded yet**. Un
 A minimal Vite + React harness lives at the repo root (`index.html`, `src/main.jsx`, `vite.config.js`, `package.json`). It mounts `Salvo.jsx` unchanged — do not edit `Salvo.jsx` to make it run, edit the harness instead.
 - Dev server: `npm run dev` → http://localhost:5173 (see `package.json` scripts for build/preview).
 - The app loads with a built-in 10-row sample list, so it is usable with no CSV upload. Upload/enrichment expects PropStream/PropWire/BatchLeads-style CSV headers (see `SPEC` in `Salvo.jsx`).
+- To open the dev server through Cursor Cloud's per-pod preview URL, `vite.config.js` sets `server.allowedHosts: ['.cursorvm.com']` (Vite otherwise blocks non-localhost hosts). Restart `npm run dev` after changing `vite.config.js`.
 - There is no lint config in the repo; `npm run build` (Vite/esbuild) is the closest compile check.
 
 ### Batch engine (`blaster_engine.py`)
