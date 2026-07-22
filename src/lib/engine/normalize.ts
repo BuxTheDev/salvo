@@ -1,15 +1,6 @@
 import type { FieldMapping } from "./mapper";
 import type { FieldKey, Property } from "./types";
 
-const NUMERIC_FIELDS: FieldKey[] = [
-  "home_value",
-  "loan_balance",
-  "equity",
-  "monthly_rent",
-  "loan_payment",
-  "asking",
-];
-
 export type Row = Record<string, string>;
 
 function parseNum(v: string | undefined): number | undefined {
