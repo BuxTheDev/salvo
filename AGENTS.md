@@ -9,6 +9,11 @@ This repo holds the Salvo product spec (`SALVO_BUILD.md`) plus two working **pro
 
 The full Next.js app described in `SALVO_BUILD.md` is **not scaffolded yet**. Until it is, "running the app" means running these two prototypes via the setup below. Do not treat the absence of a Next.js app as a bug.
 
+### Shared engine + LOI PDF pipeline
+- The pure, framework-free engine (mapper / normalize / underwrite / format / GHL export) lives in `lib/engine.js` and is the single source of truth. Both the front-end (`Salvo.jsx`) and the batch PDF/CSV pipeline import from it — change the math there, not in the UI.
+- `lib/loi/` holds the react-pdf LOI templates (`CreativeLOI.jsx`, `CashLOI.jsx`, shared `theme.js`) rendering the SALVO_BUILD.md §7 merge fields.
+- `npm run render:lois` (runs `scripts/render_lois.jsx` via `tsx`) renders one LOI PDF per ready property from the sample list into `out/lois/` plus a `manifest.csv` that references each PDF. Flags: `--offer both|creative|cash`, `--target agent|seller`, `--copies N` (repeat set to load-test scale), `--concurrency N`, `--csv path`, `--out dir`. This is a local proof of concept; productionizing means swapping the local FS writes for Supabase Storage uploads + signed URLs and moving the loop behind a queue/worker.
+
 ### Dev harness for the front-end (`Salvo.jsx`)
 A minimal Vite + React harness lives at the repo root (`index.html`, `src/main.jsx`, `vite.config.js`, `package.json`). It mounts `Salvo.jsx` unchanged — do not edit `Salvo.jsx` to make it run, edit the harness instead.
 - Dev server: `npm run dev` → http://localhost:5173 (see `package.json` scripts for build/preview).
