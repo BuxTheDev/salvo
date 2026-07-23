@@ -1,0 +1,46 @@
+# AGENTS.md
+
+## Cursor Cloud specific instructions
+
+### What this repo currently is
+This repo holds the Salvo product spec (`SALVO_BUILD.md`) plus two working **prototype** files that are the source-of-truth reference implementations:
+- `Salvo.jsx` — the full React front-end + JS underwriting/mapping/export engine (single file).
+- `blaster_engine.py` — the Python batch underwriting engine (pandas).
+
+The full Next.js app described in `SALVO_BUILD.md` is **not scaffolded yet**. Until it is, "running the app" means running these two prototypes via the setup below. Do not treat the absence of a Next.js app as a bug.
+
+### Shared engine + LOI PDF pipeline
+- The pure, framework-free engine (mapper / normalize / underwrite / format / GHL export) lives in `lib/engine.js` and is the single source of truth. Both the front-end (`Salvo.jsx`) and the batch PDF/CSV pipeline import from it — change the math there, not in the UI.
+- `lib/loi/` holds the react-pdf LOI templates (`CreativeLOI.jsx`, `CashLOI.jsx`, shared `theme.js`) rendering the SALVO_BUILD.md §7 merge fields.
+- Two ways to generate LOIs, both using the same `lib/loi` components:
+  - In-app: the `Generate N LOI PDFs` button in the results toolbar (`doBlastPDF` in `Salvo.jsx`) renders the selected rows client-side with `@react-pdf/renderer`'s `pdf().toBlob()`, bundles them + a `manifest.csv` into a ZIP via `jszip`, and downloads it. Good for interactive/small batches; for thousands, use a server/queue.
+  - CLI: `npm run render:lois` (runs `scripts/render_lois.jsx` via `tsx`) renders one LOI per ready property into `out/lois/` plus a `manifest.csv`. Flags: `--offer both|creative|cash`, `--target agent|seller`, `--copies N` (load-test scale), `--concurrency N`, `--csv path`, `--out dir`.
+- A creative send is one combined document (creative offer + Cash offer appended as later pages, via `CreativeLOI combined` default true); pure-cash rows render the standalone `CashLOI`.
+- Selection/routing/merge-field logic is centralized in `lib/pipeline.js` (`expandJobs`), shared by the CLI and the render service.
+
+### Render service (`server/`) — the scale path
+- `npm run server` (or `server:dev` for watch) starts an Express service on `PORT` (default 8787) that models the production pattern: enqueue a job → bounded-concurrency worker renders (idempotent, resumable) → store each PDF → write a manifest. Endpoints: `POST /api/render-jobs` (`{offer,target,copies,rows?}`; omit `rows` to use the sample list), `GET /api/render-jobs/:id` (status), `.../manifest.csv` (rows + signed URLs), `.../bundle.zip` (streamed ZIP), and `/files/*` (serves local PDFs).
+- Storage is abstracted in `server/storage.js`: local filesystem by default (under `out/server-store/`, "signed URLs" point back at `/files`). If `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (Cursor secrets), it switches to real Supabase Storage uploads + time-limited signed URLs (bucket `SUPABASE_LOI_BUCKET`, default `loi`) — no code change needed.
+- `vite.config.js` proxies `/api` and `/files` to `http://localhost:8787`, so the front-end can call the service in dev. The in-process queue in `server/jobs.js` is the swap point for a real queue (Supabase Queues/pgmq, Inngest, Trigger.dev) to scale horizontally.
+
+### Next.js app (deployable, Vercel) — `app/`
+- The deployable product is a Next.js (App Router) app that reuses the shared code: `app/page.jsx` renders the `Salvo.jsx` console client-side (dynamic import, `ssr:false`), and `app/api/render-jobs/route.js` (Node runtime) renders LOIs server-side via `lib/pipeline` + `server/render` + `server/storage`, returning a manifest with signed URLs (uploads to Supabase when its env is set).
+- Run: `npm run next:dev` (port 3000), build: `npm run next:build`. `@react-pdf/renderer` is in `serverExternalPackages` (next.config.mjs).
+- Deploy: Vercel (framework `nextjs`, see `vercel.json`). Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (and optional `SUPABASE_LOI_BUCKET`) in the Vercel project's env. Serverless functions have a max duration (10s hobby / longer on Pro), so the in-request render suits interactive batches; large batches should use the queue/worker in `server/`.
+- Note: the Vite harness (`npm run dev`) and the standalone Express service (`npm run server`) still exist for local prototyping/scale reference; the Next.js app is the thing that deploys.
+
+### Dev harness for the front-end (`Salvo.jsx`)
+A minimal Vite + React harness lives at the repo root (`index.html`, `src/main.jsx`, `vite.config.js`, `package.json`). It mounts `Salvo.jsx` unchanged — do not edit `Salvo.jsx` to make it run, edit the harness instead.
+- Dev server: `npm run dev` → http://localhost:5173 (see `package.json` scripts for build/preview).
+- The app loads with a built-in 10-row sample list, so it is usable with no CSV upload. Upload/enrichment expects PropStream/PropWire/BatchLeads-style CSV headers (see `SPEC` in `Salvo.jsx`).
+- To open the dev server through Cursor Cloud's per-pod preview URL, `vite.config.js` sets `server.allowedHosts: ['.cursorvm.com']` (Vite otherwise blocks non-localhost hosts). Restart `npm run dev` after changing `vite.config.js`.
+- There is no lint config in the repo; `npm run build` (Vite/esbuild) is the closest compile check.
+
+### Batch engine (`blaster_engine.py`)
+- Python deps are in `requirements.txt`; the update script installs them into a `.venv`. Activate with `. .venv/bin/activate` before running.
+- Run the demo: `python examples/run_engine_demo.py` (uses `examples/sample_propstream.csv`, writes `examples/out_*.csv`).
+- Note: `blaster_engine.py`'s own `__main__` block reads a hardcoded `.xlsx` and writes to `/mnt/user-data/outputs/` (a non-existent path here) — use `examples/run_engine_demo.py` instead of running the module directly.
+
+### Gotchas
+- `python3 -m venv` requires the `python3.12-venv` system package (already provisioned in this environment).
+- `.venv/`, `node_modules/`, `dist/`, and `examples/out_*.csv` are gitignored and are regenerated by the update script / demo run.

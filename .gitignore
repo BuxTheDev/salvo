@@ -1,0 +1,19 @@
+# Node
+node_modules/
+dist/
+
+# Next.js / Vercel
+.next/
+.vercel/
+next-env.d.ts
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Engine demo outputs
+examples/out_*.csv
+
+# Rendered LOI PDFs + manifest, and the render service's local store
+out/

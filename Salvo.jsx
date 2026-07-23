@@ -1,186 +1,28 @@
 import React, { useState, useMemo, useRef } from "react";
 import Papa from "papaparse";
+import { pdf } from "@react-pdf/renderer";
+import JSZip from "jszip";
+import {
+  SEED, SPEC, FIELD_ORDER, autoMap, fileReport, normalizeWithMap, enrich, keyOf,
+  underwrite, contactFor, usd, usdk, mean, fmtPhone,
+  TARGETS, OFFERS, TARGET_LABEL, DEFAULTS, buildExportRow, toCSV,
+} from "./lib/engine.js";
+import CreativeLOI from "./lib/loi/CreativeLOI.jsx";
+import CashLOI from "./lib/loi/CashLOI.jsx";
 
 /* =========================================================================
    SALVO — fire the whole list.
    Universal import (any CSV → required fields, flags what's missing) ·
    skip-trace enrichment · contactability + DNC · duplicate-contact flags ·
    Target × Offer modes · GHL-mapped CSV export.
+   The pure engine (mapper/underwrite/format/export) lives in ./lib/engine.js
+   so it is shared with the batch PDF/CSV pipeline (scripts/render_lois.jsx).
    ========================================================================= */
 
-const SEED = [
-  {"Address":"11250 E Prairie Ave","City":"Mesa","State":"AZ","Zip":85212,"Owner 1 First Name":"Laurie","Owner 1 Last Name":"Bitz","Est. Remaining balance of Open Loans":91214,"Est. Value":562000,"Est. Equity":470786,"Monthly Rent":2090,"Est. Total Monthly Payments":554.35,"MLS Amount":554500,"MLS Agent Name":"Zack Bennett","MLS Agent Phone":"4803437653","MLS Agent E-Mail":"zacksbennett@gmail.com"},
-  {"Address":"21561 W Kimberly Dr","City":"Buckeye","State":"AZ","Zip":85326,"Owner 1 First Name":"Mackenzie","Owner 1 Last Name":"Schexnyder","Est. Remaining balance of Open Loans":236837,"Est. Value":328000,"Est. Equity":91163,"Monthly Rent":1540,"Est. Total Monthly Payments":1572.63,"MLS Amount":320000,"MLS Agent Name":"Adrian Mojica","MLS Agent Phone":null,"MLS Agent E-Mail":"adrian@themojicateam.com"},
-  {"Address":"1184 N 163rd Dr","City":"Goodyear","State":"AZ","Zip":85338,"Owner 1 First Name":"Lisa","Owner 1 Last Name":"Fritsch","Est. Remaining balance of Open Loans":276944,"Est. Value":353000,"Est. Equity":76056,"Monthly Rent":1615,"Est. Total Monthly Payments":1590.34,"MLS Amount":365000,"MLS Agent Name":"Michelle Minik","MLS Agent Phone":"6238104514","MLS Agent E-Mail":"Michelle@TeamMinik.com"},
-  {"Address":"17866 W Villa Chula Ln","City":"Surprise","State":"AZ","Zip":85387,"Owner 1 First Name":"Kevin","Owner 1 Last Name":"Lee","Est. Remaining balance of Open Loans":361700,"Est. Value":450000,"Est. Equity":88300,"Monthly Rent":1985.58,"Est. Total Monthly Payments":1694.46,"MLS Amount":485000,"MLS Agent Name":"Christa Miranda","MLS Agent Phone":"8884610101","MLS Agent E-Mail":"christa@mirandagroupaz.com"},
-  {"Address":"1229 E Gary Cir","City":"Mesa","State":"AZ","Zip":85203,"Owner 1 First Name":"George","Owner 1 Last Name":"Chac","Est. Remaining balance of Open Loans":316481,"Est. Value":569000,"Est. Equity":252519,"Monthly Rent":2228,"Est. Total Monthly Payments":1489.32,"MLS Amount":2900,"MLS Agent Name":"Michelle Minik","MLS Agent Phone":"6238104514","MLS Agent E-Mail":"Michelle@TeamMinik.com"},
-  {"Address":"4953 Crusoe Creek Ct","City":"Las Vegas","State":"NV","Zip":89141,"Owner 1 First Name":"Maria","Owner 1 Last Name":"Rodriguez","Est. Remaining balance of Open Loans":121715,"Est. Value":411000,"Est. Equity":289285,"Monthly Rent":2313,"Est. Total Monthly Payments":1170.03,"MLS Amount":1965,"MLS Agent Name":"Alvin B. Tamura","MLS Agent Phone":"702-870-3226","MLS Agent E-Mail":"resys91@yahoo.com"},
-  {"Address":"9025 Crystal Glass Dr","City":"Las Vegas","State":"NV","Zip":89117,"Owner 1 First Name":null,"Owner 1 Last Name":"Finnigan/Li Living Trust","Est. Remaining balance of Open Loans":153143,"Est. Value":516000,"Est. Equity":362857,"Monthly Rent":2314,"Est. Total Monthly Payments":1754.58,"MLS Amount":6200,"MLS Agent Name":"Mathew Berg","MLS Agent Phone":"866-807-9087","MLS Agent E-Mail":"info@usrealty.com"},
-  {"Address":"10825 E Tripoli Ave","City":"Mesa","State":"AZ","Zip":85212,"Owner 1 First Name":"Garet","Owner 1 Last Name":"Klingensmith","Est. Remaining balance of Open Loans":384613,"Est. Value":532000,"Est. Equity":147387,"Monthly Rent":2032,"Est. Total Monthly Payments":2466.49,"MLS Amount":525000,"MLS Agent Name":"Jason L Penrose","MLS Agent Phone":null,"MLS Agent E-Mail":"offers@thepenroseteam.com"},
-  {"Address":"8148 W Hammond Ln","City":"Phoenix","State":"AZ","Zip":85043,"Owner 1 First Name":"Juan","Owner 1 Last Name":"Raygoza","Est. Remaining balance of Open Loans":355638,"Est. Value":370000,"Est. Equity":14362,"Monthly Rent":1461,"Est. Total Monthly Payments":4477.58,"MLS Amount":369000,"MLS Agent Name":"Michael F. Olberding","MLS Agent Phone":"480-459-1911","MLS Agent E-Mail":"mike.olberding@BHHSAZ.com"},
-  {"Address":"12568 W Chucks Ave","City":"Peoria","State":"AZ","Zip":85383,"Owner 1 First Name":"Michael","Owner 1 Last Name":"Milliken","Est. Remaining balance of Open Loans":536700,"Est. Value":499000,"Est. Equity":-37700,"Monthly Rent":1948,"Est. Total Monthly Payments":3835.25,"MLS Amount":535000,"MLS Agent Name":"Joshua Zuniga","MLS Agent Phone":"6232218668","MLS Agent E-Mail":"JOSH@JOSHZUNIGA.COM"},
-];
-
-/* ============================ smart mapper ============================== */
-const num = (v) => { const n = parseFloat(v); return isNaN(n) ? NaN : n; };
-const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
-const SPEC = {
-  address:      { label: "Property address", req: true,  syn: ["propertyaddress","siteaddress","situsaddress","inputpropertyaddress","sitemail","streetaddress","address","street"] },
-  city:         { label: "City",             req: false, syn: ["sitecity","inputpropertycity","city"] },
-  state:        { label: "State",            req: false, syn: ["sitestate","inputpropertystate","state"] },
-  zip:          { label: "Zip",              req: false, syn: ["sitezip","inputpropertyzip","zipcode","zip","postal"] },
-  owner_full:   { label: "Owner full name",  req: false, syn: ["ownerfullname","ownersfullname","ownername"] },
-  owner_first:  { label: "Owner first name", req: false, syn: ["owner1firstname","ownerfirstname","ownerfirst","firstname"] },
-  owner_last:   { label: "Owner last name",  req: false, syn: ["owner1lastname","ownerlastname","ownerlast","lastname"] },
-  home_value:   { label: "Home value",       req: true,  syn: ["estimatedmarketvalue","estmarketvalue","estimatedvalue","estvalue","marketvalue","homevalue","emv","avm","arv"] },
-  loan_balance: { label: "Loan balance",     req: false, syn: ["remainingbalanceofopenloans","estimatedloanbalance","estloanbalance","loanbalance","mortgagebalance","openloans","elv"] },
-  equity:       { label: "Equity",           req: false, syn: ["estimatedequity","estequity","equity","eev"] },
-  monthly_rent: { label: "Monthly rent",     req: false, syn: ["monthlyrent","marketrent","rentestimate","estrent"] },
-  loan_payment: { label: "Existing payment", req: false, syn: ["esttotalmonthlypayments","totalmonthlypayments","loanpayment","monthlypayment","piti"] },
-  asking:       { label: "Asking / list price", req: false, syn: ["mlsamount","askingprice","listprice","listingprice","mlsprice"] },
-  agent_name:   { label: "Agent name",       req: false, syn: ["mlsagentname","listingagentname","agentname"] },
-  agent_email:  { label: "Agent email",      req: false, syn: ["mlsagentemail","listingagentemail","agentemail"] },
-  agent_phone:  { label: "Agent phone",      req: false, syn: ["mlsagentphone","listingagentphone","agentphone"] },
-  owner_cell:   { label: "Owner phone",      req: false, syn: ["phone1number","phone1","cellphone","ownerphone","phonenumber","mobile","phone","cell"] },
-  owner_email:  { label: "Owner email",      req: false, syn: ["email1","owneremail","emailaddress","email"] },
-};
-const FIELD_ORDER = Object.keys(SPEC);
-
-function autoMap(headers) {
-  const H = headers.map((h) => [h, norm(h)]);
-  const used = new Set(); const m = {};
-  for (const stage of ["exact", "fuzzy"]) {
-    for (const field of FIELD_ORDER) {
-      if (m[field]) continue;
-      for (const [h, nh] of H) {
-        if (used.has(h)) continue;
-        const hit = stage === "exact" ? SPEC[field].syn.includes(nh) : SPEC[field].syn.some((s) => nh.includes(s));
-        if (hit) { m[field] = { header: h, how: stage }; used.add(h); break; }
-      }
-    }
-  }
-  return m;
-}
-function fileReport(map) {
-  const missing = FIELD_ORDER.filter((f) => SPEC[f].req && !map[f]);
-  const contact = ["agent_email", "agent_phone", "owner_cell", "owner_email"].some((k) => map[k]);
-  let kind = "incomplete";
-  if (!missing.length) kind = "base";
-  else if (missing.includes("home_value") && map.address && contact) kind = "enrichment";
-  return { missing, contact, kind };
-}
-function pickPhone(r) {
-  let best = null;
-  for (let i = 1; i <= 5; i++) {
-    const nu = r[`Phone ${i}`];
-    if (nu == null || nu === "") continue;
-    const t = String(r[`Phone ${i} Type`] || "").toLowerCase();
-    const dnc = ["true", "yes", "1", "y"].includes(String(r[`Phone ${i} DNC`] || "").trim().toLowerCase());
-    if ((t.includes("mobile") || t.includes("wireless") || t.includes("cell")) && !dnc) return { cell: nu, dnc: false };
-    if (best == null && !dnc) best = nu;
-  }
-  if (best != null) return { cell: best, dnc: false };
-  return { cell: r["Phone 1"] ?? null, dnc: !!r["Phone 1"] };
-}
-function normalizeWithMap(rows, map) {
-  if (!rows || !rows.length) return [];
-  const g = (r, f) => (map[f] ? r[map[f].header] : undefined);
-  const gn = (r, f) => num(g(r, f));
-  const phoneBlock = rows[0] && "Phone 1" in rows[0] && "Phone 1 DNC" in rows[0];
-  return rows.map((r) => {
-    const o = {};
-    o.address = g(r, "address"); o.city = g(r, "city"); o.state = g(r, "state"); o.zip = g(r, "zip");
-    o.owner_first = g(r, "owner_first"); o.owner_last = g(r, "owner_last");
-    o.home_value = gn(r, "home_value"); o.loan_balance = gn(r, "loan_balance"); o.equity = gn(r, "equity");
-    o.monthly_rent = gn(r, "monthly_rent"); o.loan_payment = gn(r, "loan_payment"); o.asking = gn(r, "asking");
-    o.agent_name = g(r, "agent_name"); o.agent_email = g(r, "agent_email"); o.agent_phone = g(r, "agent_phone");
-    o.owner_email = g(r, "owner_email");
-    if (phoneBlock) { const p = pickPhone(r); o.owner_cell = p.cell; o.owner_dnc = p.dnc; }
-    else { o.owner_cell = g(r, "owner_cell"); o.owner_dnc = false; }
-    const fn = (o.owner_first || "").trim(), ln = (o.owner_last || "").trim();
-    o.owner_full = g(r, "owner_full") || `${fn} ${ln}`.trim() || null;
-    return o;
-  }).filter((o) => o.address);
-}
-const keyOf = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-function enrich(base, add) {
-  if (!add || !add.length) return base;
-  const lut = new Map();
-  add.forEach((a) => { const k = keyOf(a.address); if (k && !lut.has(k)) lut.set(k, a); });
-  return base.map((b) => {
-    const hit = lut.get(keyOf(b.address));
-    if (!hit) return b;
-    return { ...b, owner_cell: b.owner_cell || hit.owner_cell, owner_email: b.owner_email || hit.owner_email,
-      owner_dnc: b.owner_cell ? b.owner_dnc : hit.owner_dnc };
-  });
-}
-
-/* ------------------------------ underwrite ----------------------------- */
-function underwrite(r, s) {
-  const value = r.home_value, loan = r.loan_balance, loanpmt = isNaN(r.loan_payment) ? 0 : r.loan_payment;
-  const rent = r.monthly_rent;
-  let eq = r.equity;
-  if (isNaN(value) || value === 0) return { creative_ok: false, cash_ok: false };
-  if (isNaN(eq) && !isNaN(loan)) eq = value - loan;
-  const price = r.asking > 20000 ? r.asking : value;
-  const down = isNaN(eq) || eq < 0 ? NaN : Math.min(eq * s.downPct / 100, s.downCap);
-  const financed = price - (loan || 0) - (isNaN(down) ? 0 : down);
-  const m2s = financed > 0 ? financed / s.amortMonths : 0;
-  const total = m2s + loanpmt;
-  const passesPmt = !isNaN(rent) && total <= rent + s.tolerance;
-  const creative_ok = !isNaN(down) && passesPmt && (s.requirePositiveFinanced ? financed > 0 : true);
-  const isc = value * s.sellingPct / 100;
-  const cash = value * s.cashPct / 100;
-  const net_cash = cash - (loan || 0);
-  const cash_ok = (s.requireKnownLoan ? !isNaN(loan) : true) && (s.requireCashClears ? net_cash > 0 : true);
-  return { creative_ok, cash_ok, price, down, financed: Math.max(0, financed), m2s, total,
-    sub_payment: loanpmt, industry_costs: isc, home_value: value, loan_balance: loan || 0,
-    net_trad: value - isc - (loan || 0), net_crea: price - (loan || 0), diff: (price - (loan || 0)) - (value - isc - (loan || 0)),
-    cash, net_cash };
-}
-function contactFor(r, who) {
-  if (who === "agent") return { name: r.agent_name, email: r.agent_email, phone: r.agent_phone, viaAgent: true };
-  if (r.owner_email || r.owner_cell) return { name: r.owner_full, email: r.owner_email, phone: r.owner_cell, viaAgent: false };
-  return { name: r.agent_name, email: r.agent_email, phone: r.agent_phone, viaAgent: true };
-}
-
-/* ------------------------------ formatting ----------------------------- */
-const usd = (n) => (isFinite(n) && !isNaN(n) ? n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }) : "—");
-const usdk = (n) => (isFinite(n) ? (n < 0 ? "-" : "") + "$" + Math.abs(Math.round(n / 1000)) + "k" : "—");
-const fcT = (v) => (v == null || isNaN(v) || v <= 0 ? "TBD" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const fcS = (v) => (v == null || isNaN(v) ? "TBD" : "$" + Number(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0);
-const fmtDate = (d = new Date()) => d.toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric" });
-const fmtPhone = (v) => { if (v == null || v === "") return ""; const d = String(v).replace(/\D/g, ""); const t = d.length === 11 && d[0] === "1" ? d.slice(1) : d; return t.length === 10 ? `${t.slice(0,3)}-${t.slice(3,6)}-${t.slice(6)}` : String(v); };
-
-const TARGETS = { agent: "Agent", seller: "Seller" };
-const OFFERS = { creative: "Creative", cash: "Cash", both: "Cash + Creative" };
-const TARGET_LABEL = { agent: "Direct-to-Agent", seller: "Direct-to-Seller" };
-const MODES = { creative: "creative", cash: "cash", both: "both" };
-const DEFAULTS = { downPct: 50, downCap: 30000, amortMonths: 360, tolerance: 200, sellingPct: 12, cashPct: 80, requirePositiveFinanced: true, requireCashClears: true, requireKnownLoan: false };
-
-/* ------------------------------ CSV export ----------------------------- */
-function buildExportRow(x, target, offer, dupCount) {
-  const { r, u, creativeOK, cashOK, contact } = x;
-  const meta = {
-    "Contact Name": contact.name || "", "Contact Email": contact.email || "", "Contact Phone": fmtPhone(contact.phone),
-    "Contact Type": contact.viaAgent ? "Listing Agent" : "Owner", "Contact DNC": (!contact.viaAgent && r.owner_dnc && !contact.email) ? "true" : "false",
-    "Listings For Contact": dupCount, "City": r.city || "", "State": r.state || "",
-    "Offer Type": OFFERS[offer], "Tags": `Salvo, ${TARGET_LABEL[target]}, ${OFFERS[offer]}`, "Pipeline Stage": "Offer Ready",
-    "Owner Full Name": r.owner_full || "", "Address": r.address || "", "Date": fmtDate(),
-  };
-  const crea = { "Has Creative": creativeOK ? "true" : "false", "Price": fcT(u.price), "Loan Balance": fcT(u.loan_balance),
-    "Down": fcT(u.down), "Financed": fcT(u.financed), "Payment": fcT(u.m2s), "Sub Payment": fcT(u.sub_payment),
-    "Seller Profit Creative": fcT(u.net_crea), "Seller Profit Traditional": fcS(u.net_trad), "Seller Profit Difference": fcT(u.diff) };
-  const cash = { "Has Cash": cashOK ? "true" : "false", "Cash Scenario": fcT(u.cash), "Net Cash": fcT(u.net_cash) };
-  const shared = { "Industry Costs": fcT(u.industry_costs), "Home Value": fcT(u.home_value) };
-  if (offer === "cash") return { ...meta, ...cash, ...shared };
-  return { ...meta, ...crea, ...cash, ...shared };
-}
-function toCSV(rows) {
-  const keys = []; rows.forEach((o) => Object.keys(o).forEach((k) => { if (!keys.includes(k)) keys.push(k); }));
-  const esc = (v) => { v = v == null ? "" : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  return [keys.join(","), ...rows.map((o) => keys.map((k) => esc(o[k])).join(","))].join("\n");
+const slugify = (str) => String(str || "property").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 48);
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
 }
 function download(text, name) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob);
@@ -201,6 +43,7 @@ export default function Salvo() {
   const [s, setS] = useState(DEFAULTS);
   const [sel, setSel] = useState(() => new Set());
   const [showBlast, setShowBlast] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [note, setNote] = useState(null);
   const fileRef = useRef(); const enrichRef = useRef();
   const setKey = (k, v) => setS((p) => ({ ...p, [k]: v }));
@@ -255,6 +98,36 @@ export default function Salvo() {
     download(toCSV(rows), `salvo_${target}_${offer}_${rows.length}.csv`);
     setNote(`Exported ${rows.length}-row CSV — ${OFFERS[offer]} · ${TARGET_LABEL[target]}. Import to GHL, map columns to custom fields, fire the "Offer Ready" workflow.`);
   };
+  const doBlastPDF = async () => {
+    const chosen = scored.filter((x) => sel.has(x.r.address) && x.ready);
+    if (!chosen.length || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const zip = new JSZip();
+      const manifest = [];
+      for (let i = 0; i < chosen.length; i++) {
+        const x = chosen[i];
+        setNote(`Rendering LOIs… ${i + 1}/${chosen.length}`);
+        // A creative send is one combined document (creative + appended cash);
+        // a pure-cash row gets the standalone cash LOI.
+        const kind = offer === "cash" ? "cash" : offer === "creative" ? "creative" : (x.creativeOK ? "creative" : "cash");
+        const d = buildExportRow(x, target, kind, x.dup);
+        const file = `${String(i + 1).padStart(3, "0")}-${slugify(d.Address)}-${kind}.pdf`;
+        const element = kind === "creative" ? <CreativeLOI d={d} /> : <CashLOI d={d} />;
+        const blob = await pdf(element).toBlob();
+        zip.file(file, blob);
+        manifest.push({ ...d, "LOI Template": kind === "creative" ? "Creative + Cash" : "Cash", "LOI File": file });
+      }
+      zip.file("manifest.csv", toCSV(manifest));
+      const out = await zip.generateAsync({ type: "blob" });
+      downloadBlob(out, `salvo_lois_${target}_${offer}_${chosen.length}.zip`);
+      setNote(`Generated ${chosen.length} LOI PDF${chosen.length === 1 ? "" : "s"} + manifest.csv — downloaded as a ZIP. Creative sends include the cash offer as an appended page.`);
+    } catch (e) {
+      setNote(`PDF generation failed: ${e.message}`);
+    } finally {
+      setPdfBusy(false);
+    }
+  };
   const firstSel = scored.find((x) => sel.has(x.r.address) && x.ready);
   const bothMode = off === "both";
   const KIND = { base: ["Ready to blast", "gain"], enrichment: ["Skip-trace / enrichment file", "warn"], incomplete: ["Missing required data", "loss"] };
@@ -283,16 +156,20 @@ export default function Salvo() {
         {showMapper && (
           <div className="sv-map">
             <div className="sv-map-grid">
-              {FIELD_ORDER.map((f) => (
+              {FIELD_ORDER.map((f) => {
+                const ownerFullDerived = f === "owner_full" && !mapping.owner_full && !!(mapping.owner_first || mapping.owner_last);
+                return (
                 <label key={f} className={`sv-mf ${SPEC[f].req && !mapping[f] ? "req-miss" : ""}`}>
                   <span className="sv-mf-l">{SPEC[f].label}{SPEC[f].req && <b className="req">*</b>}</span>
                   <select value={mapping[f]?.header || ""} onChange={(e) => setMap(f, e.target.value)}>
-                    <option value="">— none —</option>
+                    <option value="">{ownerFullDerived ? "— first + last —" : "— none —"}</option>
                     {headers.map((h) => <option key={h} value={h}>{h}</option>)}
                   </select>
                   {mapping[f] && <span className={`sv-how ${mapping[f].how}`}>{mapping[f].how === "manual" ? "set" : mapping[f].how === "exact" ? "auto" : "guess"}</span>}
+                  {ownerFullDerived && <span className="sv-how combined" title="Owner full name is combined from owner first + last name">combined</span>}
                 </label>
-              ))}
+                );
+              })}
             </div>
             <label className="sv-enrich">
               <input ref={enrichRef} type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => onEnrich(e.target.files[0])} />
@@ -337,14 +214,17 @@ export default function Salvo() {
         <main className="sv-list">
           <div className="sv-toolbar">
             <div><button className="sv-btn ghost" onClick={selectAll}>Select all ready</button><button className="sv-btn ghost" onClick={clearSel}>Clear</button><button className="sv-btn ghost" onClick={() => setShowBlast((v) => !v)} disabled={!sel.size}>{showBlast ? "Hide mapping" : "Preview mapping"}</button></div>
-            <button className="sv-btn primary" disabled={!sel.size} onClick={doBlast}>⬇ Blast {sel.size} → CSV</button>
+            <div className="sv-blastbtns">
+              <button className="sv-btn pdf" disabled={!sel.size || pdfBusy} onClick={doBlastPDF}>{pdfBusy ? "Rendering…" : `⬇ Generate ${sel.size} LOI PDF${sel.size === 1 ? "" : "s"}`}</button>
+              <button className="sv-btn primary" disabled={!sel.size || pdfBusy} onClick={doBlast}>⬇ Blast {sel.size} → CSV</button>
+            </div>
           </div>
           {note && <div className="sv-note">{note}</div>}
           <div className="sv-tablewrap">
             <table className="sv-table">
               <thead>
                 {off === "creative" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Rent vs Pmt</th><th>Down</th><th className="hook">SF Difference</th><th>Status</th></tr>)
-                : off === "cash" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Cash Offer</th><th className="hook">Net Cash</th><th>Saved</th><th>Status</th></tr>)
+                : off === "cash" ? (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th>Cash Offer</th><th className="hook">Net Cash</th><th title="Estimated traditional selling costs (agent commissions, etc.) the seller avoids by selling as-is for cash — not net savings vs. an MLS sale">Costs Avoided</th><th>Status</th></tr>)
                 : (<tr><th></th><th className="l">Property / {TARGETS[target]}</th><th className="hook">SF Difference</th><th className="hook">Net Cash</th><th>Offers</th><th>Status</th></tr>)}
               </thead>
               <tbody>
@@ -354,7 +234,7 @@ export default function Salvo() {
                   const dncFlag = !contact.viaAgent && r.owner_dnc && !contact.email;
                   return (
                     <tr key={r.address} className={`${sel.has(r.address) ? "on" : ""} ${ok ? "" : "dim"}`}>
-                      <td><input type="checkbox" disabled={!ok} checked={sel.has(r.address)} onChange={() => toggle(r.address)} /></td>
+                      <td><input type="checkbox" aria-label={`Select ${r.address}`} disabled={!ok} checked={sel.has(r.address)} onChange={() => toggle(r.address)} /></td>
                       <td className="l">
                         <div className="sv-addr">{r.address} <span className="sv-city">{r.city}{r.city && r.state ? ", " : ""}{r.state}</span>
                           {dup > 1 && <span className="sv-dup" title="same contact on multiple listings">×{dup}</span>}
@@ -372,6 +252,12 @@ export default function Salvo() {
               </tbody>
             </table>
           </div>
+          {norm.length === 0 && (
+            <div className="sv-empty">No rows to show yet. Upload a CSV list (PropStream, PropWire, BatchLeads, or any CSV) to start firing offers.</div>
+          )}
+          {norm.length > 0 && ready.length === 0 && (
+            <div className="sv-empty">No {OFFERS[offer]} offers are ready under the current terms{reachableOnly ? " with a reachable contact" : ""}. Loosen the settings on the left or switch the offer type.</div>
+          )}
           {firstSel && (off === "creative" || (bothMode && firstSel.creativeOK)) && (
             <div className="sv-pitch"><span className="sv-pitch-lbl">LOI hook · {firstSel.r.address}</span>Selling creatively nets {firstSel.r.owner_full || "the seller"} {usd(firstSel.u.diff)} more than a traditional sale — {usd(firstSel.u.net_crea)} vs {usd(firstSel.u.net_trad)} after {s.sellingPct}% costs.</div>
           )}
@@ -402,90 +288,109 @@ function Slider({ label, v, set, min, max, step, unit = "", fmt }) { return (<di
 
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-.sv{ --ink:#1b2228; --ink-2:#4a5560; --canvas:#eceef1; --panel:#fff; --line:#d6dbe0;
-  --gain:#147a54; --loss:#c0392b; --warn:#c08a2d; --gold:#e86a2a; --gold-soft:#fbe7da; --steel:#356886;
-  font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif; color:var(--ink); background:var(--canvas);
-  padding:20px; border-radius:16px; max-width:1180px; margin:0 auto; box-shadow:0 10px 34px rgba(18,26,34,.07); }
+.sv{ --ink:#161c22; --ink-2:#5a6672; --canvas:#e9ecf0; --panel:#fff; --line:#dde2e8;
+  --gain:#0f7a52; --loss:#c0392b; --warn:#c08a2d; --gold:#e86a2a; --gold-soft:#fdeadf; --steel:#356886;
+  --radius:14px; --shadow:0 1px 2px rgba(20,30,40,.05), 0 1px 3px rgba(20,30,40,.04); --shadow-lg:0 16px 46px rgba(18,26,34,.13);
+  font-family:'Space Grotesk',ui-sans-serif,system-ui,sans-serif; color:var(--ink); accent-color:var(--gold);
+  background:linear-gradient(180deg,#eef1f4,#e5e9ee); padding:22px; border-radius:20px; max-width:1200px; margin:0 auto; box-shadow:var(--shadow-lg); }
 .sv *{ box-sizing:border-box; }
-.sv .sv-h{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-2); margin:0 0 12px; font-weight:600; }
+.sv :focus-visible{ outline:2px solid var(--steel); outline-offset:2px; border-radius:6px; }
+.sv input[type=checkbox]{ width:15px; height:15px; cursor:pointer; accent-color:var(--gold); }
+.sv input[type=checkbox]:disabled{ cursor:not-allowed; opacity:.4; }
+.sv .sv-h{ font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-2); margin:0 0 14px; font-weight:600; }
 .gain{color:var(--gain);} .loss{color:var(--loss);} .warn{color:var(--warn);} .mut{color:var(--ink-2);}
-.sv-head{ display:flex; align-items:center; justify-content:space-between; background:var(--ink); color:#fff; padding:14px 20px; border-radius:11px; margin-bottom:14px; border-bottom:2px solid var(--gold); box-shadow:0 2px 8px rgba(20,28,36,.14); }
-.sv-brand{ display:flex; align-items:center; gap:10px; }
+.sv-head{ display:flex; align-items:center; justify-content:space-between; background:linear-gradient(180deg,#232c34,#161c22); color:#fff; padding:15px 22px; border-radius:14px; margin-bottom:16px; border-bottom:2px solid var(--gold); box-shadow:0 4px 14px rgba(20,28,36,.18); }
+.sv-brand{ display:flex; align-items:center; gap:11px; }
 .sv-name{ font-weight:700; letter-spacing:.22em; font-size:19px; }
-.sv-tag{ font-size:12px; color:#9fb0c0; font-style:italic; }
-.sv-upload span{ cursor:pointer; background:var(--gold); color:#2a1206; padding:8px 14px; border-radius:7px; font-size:12.5px; font-weight:600; }
+.sv-tag{ font-size:12px; color:#93a4b4; font-style:italic; padding-left:11px; margin-left:4px; border-left:1px solid rgba(255,255,255,.15); }
+.sv-upload span{ cursor:pointer; background:var(--gold); color:#2a1206; padding:9px 15px; border-radius:9px; font-size:12.5px; font-weight:600; display:inline-block; box-shadow:0 2px 8px rgba(232,106,42,.35); transition:transform .12s, box-shadow .12s, filter .12s; }
+.sv-upload span:hover{ filter:brightness(1.05); transform:translateY(-1px); box-shadow:0 4px 14px rgba(232,106,42,.45); }
+.sv-upload span:active{ transform:translateY(0); }
 
-.sv-import{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px 15px; margin-bottom:12px; box-shadow:0 1px 3px rgba(20,30,40,.05); }
+.sv-import{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:13px 16px; margin-bottom:12px; box-shadow:var(--shadow); }
 .sv-import-top{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .sv-src{ display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink-2); } .sv-src b{ color:var(--ink); }
-.sv-kind{ font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:3px 9px; border-radius:20px; }
+.sv-kind{ font-size:10px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:3px 10px; border-radius:20px; }
 .sv-kind.gain{ background:#e3f3ec; color:var(--gain); } .sv-kind.warn{ background:var(--gold-soft); color:#b3560f; } .sv-kind.loss{ background:#fbe6e3; color:var(--loss); }
-.sv-link{ background:none; border:none; color:var(--steel); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; text-decoration:underline; }
-.sv-missing{ margin-top:10px; background:#fdf4e7; border:1px solid #f0dcb8; color:#8a5a12; border-radius:8px; padding:8px 11px; font-size:12px; line-height:1.5; }
-.sv-map{ margin-top:12px; border-top:1px solid var(--line); padding-top:12px; }
-.sv-map-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:9px 14px; }
+.sv-link{ background:none; border:none; color:var(--steel); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; text-decoration:underline; text-underline-offset:2px; padding:2px 4px; border-radius:6px; }
+.sv-link:hover{ color:#24485f; }
+.sv-missing{ margin-top:10px; background:#fdf4e7; border:1px solid #f0dcb8; color:#8a5a12; border-radius:9px; padding:9px 12px; font-size:12px; line-height:1.5; }
+.sv-map{ margin-top:12px; border-top:1px solid var(--line); padding-top:13px; }
+.sv-map-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:10px 14px; }
 .sv-mf{ display:flex; flex-direction:column; gap:3px; font-size:11px; position:relative; }
 .sv-mf-l{ color:var(--ink-2); font-weight:500; } .sv-mf-l .req{ color:var(--gold); margin-left:2px; }
-.sv-mf select{ font-family:inherit; font-size:11.5px; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:#fbfcfd; color:var(--ink); }
+.sv-mf select{ font-family:inherit; font-size:11.5px; padding:6px 8px; border:1px solid var(--line); border-radius:7px; background:#fbfcfd; color:var(--ink); transition:border-color .12s; }
+.sv-mf select:hover{ border-color:#c2c9d1; }
 .sv-mf.req-miss select{ border-color:var(--loss); background:#fdf0ef; }
-.sv-how{ position:absolute; right:6px; top:23px; font-size:8.5px; letter-spacing:.04em; text-transform:uppercase; font-weight:700; padding:1px 5px; border-radius:8px; pointer-events:none; }
-.sv-how.exact{ background:#e3f3ec; color:var(--gain); } .sv-how.fuzzy{ background:var(--gold-soft); color:#b3560f; } .sv-how.manual{ background:#e8eef4; color:var(--steel); }
-.sv-enrich{ display:flex; align-items:center; gap:10px; margin-top:12px; }
-.sv-link2{ background:#f2f4f6; border:1px dashed var(--line); color:var(--steel); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; padding:7px 12px; border-radius:7px; }
+.sv-how{ position:absolute; right:6px; top:24px; font-size:8.5px; letter-spacing:.04em; text-transform:uppercase; font-weight:700; padding:1px 5px; border-radius:8px; pointer-events:none; }
+.sv-how.exact{ background:#e3f3ec; color:var(--gain); } .sv-how.fuzzy{ background:var(--gold-soft); color:#b3560f; } .sv-how.manual{ background:#e8eef4; color:var(--steel); } .sv-how.combined{ background:#e8eef4; color:var(--steel); }
+.sv-enrich{ display:flex; align-items:center; gap:10px; margin-top:13px; }
+.sv-link2{ background:#f2f4f6; border:1px dashed var(--line); color:var(--steel); font-family:inherit; font-size:12px; font-weight:600; cursor:pointer; padding:8px 13px; border-radius:8px; transition:background .12s, border-color .12s; }
+.sv-link2:hover{ background:#e9edf1; border-color:#c2c9d1; }
 .sv-enrich-n{ font-size:11.5px; color:var(--ink-2); } .sv-enrich-n b{ color:var(--ink); }
 
 .sv-bar{ display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
 .sv-controls{ display:flex; gap:12px; flex-wrap:wrap; }
-.sv-seg{ display:flex; align-items:center; gap:3px; background:#f6f8fa; border:1px solid var(--line); border-radius:11px; padding:4px 5px; box-shadow:inset 0 1px 2px rgba(20,30,40,.03); }
-.sv-seglbl{ display:flex; align-items:center; gap:6px; font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; padding:0 9px; }
+.sv-seg{ display:flex; align-items:center; gap:3px; background:#eef1f4; border:1px solid var(--line); border-radius:12px; padding:4px 5px; box-shadow:inset 0 1px 2px rgba(20,30,40,.04); }
+.sv-seglbl{ display:flex; align-items:center; gap:6px; font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; padding:0 10px; }
 .sv-seglbl::before{ content:""; width:7px; height:7px; border-radius:50%; }
-.sv-seg button{ border:none; background:transparent; color:var(--ink-2); padding:8px 13px; border-radius:8px; font-family:inherit; font-size:12.5px; font-weight:500; cursor:pointer; transition:background .14s,color .14s,box-shadow .14s; }
-.sv-seg button:hover{ background:#e9ecef; color:var(--ink); }
+.sv-seg button{ border:none; background:transparent; color:var(--ink-2); padding:8px 14px; border-radius:9px; font-family:inherit; font-size:12.5px; font-weight:500; cursor:pointer; transition:background .14s,color .14s,box-shadow .14s,transform .1s; }
+.sv-seg button:hover{ background:#e2e6eb; color:var(--ink); }
+.sv-seg button:active{ transform:scale(.97); }
 .seg-target .sv-seglbl{ color:#2f6483; } .seg-target .sv-seglbl::before{ background:#3d6f8f; }
-.seg-target button.on,.seg-target button.on:hover{ background:#356886; color:#fff; box-shadow:0 1px 2px rgba(28,60,80,.30); }
+.seg-target button.on,.seg-target button.on:hover{ background:#356886; color:#fff; box-shadow:0 2px 6px rgba(28,60,80,.32); }
 .seg-offer .sv-seglbl{ color:#c2531a; } .seg-offer .sv-seglbl::before{ background:#e86a2a; }
-.seg-offer button.on,.seg-offer button.on:hover{ background:#e86a2a; color:#2a1206; box-shadow:0 1px 2px rgba(180,80,30,.32); }
-.sv-reach{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-2); }
+.seg-offer button.on,.seg-offer button.on:hover{ background:#e86a2a; color:#2a1206; box-shadow:0 2px 6px rgba(180,80,30,.34); }
+.sv-reach{ display:flex; align-items:center; gap:7px; font-size:12px; color:var(--ink-2); background:var(--panel); border:1px solid var(--line); padding:8px 13px; border-radius:10px; box-shadow:var(--shadow); cursor:pointer; }
 
-.sv-stats{ display:grid; grid-template-columns:repeat(4,1fr) 1.3fr; gap:10px; margin-bottom:12px; }
-.sv-stat{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:13px 15px; box-shadow:0 1px 3px rgba(20,30,40,.05); }
-.sv-stat.wide{ background:var(--ink); border-color:var(--ink); }
-.sv-stat-n{ font-family:'IBM Plex Mono',monospace; font-size:23px; font-weight:600; line-height:1; }
-.sv-stat-n.gain{color:var(--gain);} .sv-stat-n.gold{color:var(--gold);} .sv-stat-n.steel{color:var(--steel);} .sv-stat.wide .sv-stat-n.gold{color:#f0c766;}
-.sv-stat-l{ font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2); margin-top:5px; } .sv-stat.wide .sv-stat-l{ color:#9fb0c0; }
+.sv-stats{ display:grid; grid-template-columns:repeat(4,1fr) 1.3fr; gap:11px; margin-bottom:12px; }
+.sv-stat{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:var(--shadow); transition:transform .12s, box-shadow .12s; }
+.sv-stat:hover{ transform:translateY(-2px); box-shadow:0 6px 18px rgba(20,30,40,.09); }
+.sv-stat.wide{ background:linear-gradient(180deg,#232c34,#161c22); border-color:var(--ink); }
+.sv-stat-n{ font-family:'IBM Plex Mono',monospace; font-size:24px; font-weight:600; line-height:1; letter-spacing:-.01em; }
+.sv-stat-n.gain{color:var(--gain);} .sv-stat-n.gold{color:var(--gold);} .sv-stat-n.steel{color:var(--steel);} .sv-stat.wide .sv-stat-n.gold{color:#f4cf74;}
+.sv-stat-l{ font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2); margin-top:6px; } .sv-stat.wide .sv-stat-l{ color:#9fb0c0; }
 
-.sv-body{ display:grid; grid-template-columns:230px 1fr; gap:12px; align-items:start; }
-.sv-settings{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(20,30,40,.05); }
-.sv-slider{ margin-bottom:13px; } .sv-slider-top{ display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:5px; } .sv-slider-top span:first-child{ color:var(--ink-2); }
-.sv-slider-val{ font-family:'IBM Plex Mono',monospace; font-weight:600; }
-.sv-slider input[type=range]{ width:100%; -webkit-appearance:none; appearance:none; height:4px; background:var(--line); border-radius:4px; }
-.sv-slider input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:15px; height:15px; border-radius:50%; background:var(--ink); border:3px solid #fff; box-shadow:0 0 0 1px var(--line); cursor:pointer; }
-.sv-toggle{ display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--ink-2); margin-top:10px; cursor:pointer; }
+.sv-body{ display:grid; grid-template-columns:236px 1fr; gap:12px; align-items:start; }
+.sv-settings{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:18px; box-shadow:var(--shadow); position:sticky; top:14px; }
+.sv-slider{ margin-bottom:15px; } .sv-slider-top{ display:flex; justify-content:space-between; font-size:11.5px; margin-bottom:6px; } .sv-slider-top span:first-child{ color:var(--ink-2); }
+.sv-slider-val{ font-family:'IBM Plex Mono',monospace; font-weight:600; color:var(--ink); }
+.sv-slider input[type=range]{ width:100%; -webkit-appearance:none; appearance:none; height:5px; background:var(--line); border-radius:5px; accent-color:var(--gold); cursor:pointer; }
+.sv-slider input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:var(--gold); border:3px solid #fff; box-shadow:0 1px 3px rgba(20,30,40,.25); cursor:pointer; transition:transform .1s; }
+.sv-slider input[type=range]::-webkit-slider-thumb:hover{ transform:scale(1.12); }
+.sv-slider input[type=range]::-moz-range-thumb{ width:16px; height:16px; border-radius:50%; background:var(--gold); border:3px solid #fff; box-shadow:0 1px 3px rgba(20,30,40,.25); cursor:pointer; }
+.sv-toggle{ display:flex; align-items:center; gap:8px; font-size:11.5px; color:var(--ink-2); margin-top:11px; cursor:pointer; }
 
-.sv-list{ background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px 16px; box-shadow:0 1px 3px rgba(20,30,40,.05); }
-.sv-toolbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:8px; flex-wrap:wrap; }
-.sv-btn{ font-family:inherit; font-size:12.5px; font-weight:500; border-radius:7px; padding:8px 13px; cursor:pointer; border:1px solid var(--line); }
-.sv-btn.ghost{ background:#fbfcfd; color:var(--ink-2); margin-right:6px; } .sv-btn.ghost:disabled{ opacity:.4; cursor:not-allowed; }
-.sv-btn.primary{ background:var(--gold); color:#2a1206; border-color:var(--gold); font-weight:600; } .sv-btn.primary:disabled{ opacity:.4; cursor:not-allowed; }
-.sv-note{ background:#e3f3ec; border:1px solid #bfe3d1; color:#0f5b3f; border-radius:8px; padding:9px 12px; font-size:12px; margin-bottom:10px; }
-.sv-tablewrap{ overflow-x:auto; }
+.sv-list{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px 18px; box-shadow:var(--shadow); }
+.sv-toolbar{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; flex-wrap:wrap; }
+.sv-btn{ font-family:inherit; font-size:12.5px; font-weight:500; border-radius:9px; padding:8px 14px; cursor:pointer; border:1px solid var(--line); transition:background .12s, border-color .12s, transform .1s, box-shadow .12s, filter .12s; }
+.sv-btn:active{ transform:scale(.98); }
+.sv-btn.ghost{ background:#fbfcfd; color:var(--ink-2); margin-right:6px; } .sv-btn.ghost:hover:not(:disabled){ background:#eef1f4; color:var(--ink); border-color:#c2c9d1; } .sv-btn.ghost:disabled{ opacity:.4; cursor:not-allowed; }
+.sv-btn.primary{ background:var(--gold); color:#2a1206; border-color:var(--gold); font-weight:600; box-shadow:0 2px 8px rgba(232,106,42,.32); } .sv-btn.primary:hover:not(:disabled){ filter:brightness(1.05); box-shadow:0 4px 14px rgba(232,106,42,.42); } .sv-btn.primary:disabled{ opacity:.4; cursor:not-allowed; box-shadow:none; }
+.sv-blastbtns{ display:flex; gap:8px; align-items:center; }
+.sv-btn.pdf{ background:var(--ink); color:#fff; border-color:var(--ink); font-weight:600; } .sv-btn.pdf:hover:not(:disabled){ background:#2a333c; } .sv-btn.pdf:disabled{ opacity:.4; cursor:not-allowed; }
+.sv-note{ background:#e3f3ec; border:1px solid #bfe3d1; color:#0f5b3f; border-radius:9px; padding:10px 13px; font-size:12px; margin-bottom:11px; line-height:1.5; }
+.sv-empty{ text-align:center; color:var(--ink-2); font-size:12.5px; padding:34px 16px; line-height:1.6; }
+.sv-tablewrap{ overflow-x:auto; border:1px solid var(--line); border-radius:11px; }
 .sv-table{ width:100%; border-collapse:collapse; font-size:12px; }
-.sv-table th{ text-align:right; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2); font-weight:600; padding:7px 10px; border-bottom:2px solid var(--line); white-space:nowrap; }
+.sv-table th{ text-align:right; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2); font-weight:600; padding:9px 12px; border-bottom:1px solid var(--line); white-space:nowrap; position:sticky; top:0; background:#f7f9fb; z-index:1; }
 .sv-table th.l{ text-align:left; } .sv-table th.hook{ color:var(--gold); }
-.sv-table td{ text-align:right; padding:9px 10px; border-bottom:1px solid #eef1f4; font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
+.sv-table td{ text-align:right; padding:10px 12px; border-bottom:1px solid #eef1f4; font-family:'IBM Plex Mono',monospace; white-space:nowrap; }
 .sv-table td.l{ text-align:left; font-family:'Space Grotesk',sans-serif; }
-.sv-table tr.on{ background:#f0f4f8; } .sv-table tr.dim{ opacity:.5; }
+.sv-table tbody tr{ transition:background .1s; }
+.sv-table tbody tr:hover{ background:#f5f8fb; }
+.sv-table tr.on{ background:#eaf1f7 !important; box-shadow:inset 3px 0 0 var(--steel); } .sv-table tr.dim{ opacity:.5; }
 .sv-addr{ font-weight:600; font-size:12.5px; display:flex; align-items:center; gap:7px; } .sv-city{ color:var(--ink-2); font-weight:400; font-size:11px; }
-.sv-dup{ font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; background:#e8eef4; color:var(--steel); padding:1px 6px; border-radius:9px; }
-.sv-dnc{ font-size:9px; font-weight:700; background:#fbe6e3; color:var(--loss); padding:1px 6px; border-radius:9px; letter-spacing:.04em; }
-.sv-contact{ font-size:11px; color:var(--ink-2); margin-top:1px; }
+.sv-dup{ font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; background:#e8eef4; color:var(--steel); padding:1px 7px; border-radius:9px; }
+.sv-dnc{ font-size:9px; font-weight:700; background:#fbe6e3; color:var(--loss); padding:1px 7px; border-radius:9px; letter-spacing:.04em; }
+.sv-contact{ font-size:11px; color:var(--ink-2); margin-top:2px; }
 .sv-table td.hook{ font-weight:600; color:var(--gold); background:rgba(232,106,42,.06); }
 .sv-offers{ display:flex; gap:4px; justify-content:flex-end; }
-.ob{ font-family:'Space Grotesk',sans-serif; font-size:9.5px; font-weight:600; padding:2px 6px; border-radius:9px; background:#eef1f4; color:#aab6c1; letter-spacing:.04em; } .ob.on{ background:var(--ink); color:#fff; }
-.chip{ display:inline-block; padding:2px 9px; border-radius:10px; font-size:10px; font-weight:600; font-family:'Space Grotesk',sans-serif; } .chip.ok{ background:#e3f3ec; color:var(--gain); } .chip.no{ background:#eef1f4; color:var(--ink-2); }
-.sv-pitch{ margin-top:12px; background:var(--gold-soft); border-left:3px solid var(--gold); border-radius:0 8px 8px 0; padding:10px 13px; font-size:12.5px; color:#7a3d12; line-height:1.5; }
+.ob{ font-family:'Space Grotesk',sans-serif; font-size:9.5px; font-weight:600; padding:2px 7px; border-radius:9px; background:#eef1f4; color:#aab6c1; letter-spacing:.04em; } .ob.on{ background:var(--ink); color:#fff; }
+.chip{ display:inline-block; padding:3px 10px; border-radius:20px; font-size:10px; font-weight:700; letter-spacing:.03em; font-family:'Space Grotesk',sans-serif; } .chip.ok{ background:#e3f3ec; color:var(--gain); } .chip.no{ background:#eef1f4; color:var(--ink-2); }
+.sv-pitch{ margin-top:13px; background:var(--gold-soft); border-left:3px solid var(--gold); border-radius:0 10px 10px 0; padding:11px 14px; font-size:12.5px; color:#7a3d12; line-height:1.5; }
 .sv-pitch-lbl{ display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#b3560f; margin-bottom:3px; font-weight:600; }
-.sv-payload{ margin-top:12px; } .sv-payload-cap{ font-size:11px; color:var(--ink-2); margin-bottom:6px; }
-.sv-payload pre{ background:var(--ink); color:#c8d6e2; padding:12px; border-radius:8px; font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.5; overflow-x:auto; margin:0; max-height:320px; }
-@media(max-width:860px){ .sv-stats{ grid-template-columns:1fr 1fr; } .sv-body{ grid-template-columns:1fr; } }
+.sv-payload{ margin-top:13px; } .sv-payload-cap{ font-size:11px; color:var(--ink-2); margin-bottom:6px; }
+.sv-payload pre{ background:var(--ink); color:#c8d6e2; padding:13px; border-radius:10px; font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.5; overflow-x:auto; margin:0; max-height:320px; }
+@media(max-width:860px){ .sv-stats{ grid-template-columns:1fr 1fr; } .sv-body{ grid-template-columns:1fr; } .sv-settings{ position:static; } }
 `;
