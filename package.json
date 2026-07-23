@@ -8,10 +8,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "render:lois": "tsx scripts/render_lois.jsx"
+    "render:lois": "tsx scripts/render_lois.jsx",
+    "server": "tsx server/index.js",
+    "server:dev": "tsx watch server/index.js"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
+    "@supabase/supabase-js": "^2.110.8",
+    "express": "^5.2.1",
     "jszip": "^3.10.1",
     "papaparse": "^5.5.4",
     "react": "^19.2.8",

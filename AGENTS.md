@@ -15,7 +15,13 @@ The full Next.js app described in `SALVO_BUILD.md` is **not scaffolded yet**. Un
 - Two ways to generate LOIs, both using the same `lib/loi` components:
   - In-app: the `Generate N LOI PDFs` button in the results toolbar (`doBlastPDF` in `Salvo.jsx`) renders the selected rows client-side with `@react-pdf/renderer`'s `pdf().toBlob()`, bundles them + a `manifest.csv` into a ZIP via `jszip`, and downloads it. Good for interactive/small batches; for thousands, use a server/queue.
   - CLI: `npm run render:lois` (runs `scripts/render_lois.jsx` via `tsx`) renders one LOI per ready property into `out/lois/` plus a `manifest.csv`. Flags: `--offer both|creative|cash`, `--target agent|seller`, `--copies N` (load-test scale), `--concurrency N`, `--csv path`, `--out dir`.
-- A creative send is one combined document (creative offer + Cash offer appended as later pages, via `CreativeLOI combined` default true); pure-cash rows render the standalone `CashLOI`. This is a local proof of concept; productionizing means Supabase Storage uploads + signed URLs behind a queue/worker.
+- A creative send is one combined document (creative offer + Cash offer appended as later pages, via `CreativeLOI combined` default true); pure-cash rows render the standalone `CashLOI`.
+- Selection/routing/merge-field logic is centralized in `lib/pipeline.js` (`expandJobs`), shared by the CLI and the render service.
+
+### Render service (`server/`) — the scale path
+- `npm run server` (or `server:dev` for watch) starts an Express service on `PORT` (default 8787) that models the production pattern: enqueue a job → bounded-concurrency worker renders (idempotent, resumable) → store each PDF → write a manifest. Endpoints: `POST /api/render-jobs` (`{offer,target,copies,rows?}`; omit `rows` to use the sample list), `GET /api/render-jobs/:id` (status), `.../manifest.csv` (rows + signed URLs), `.../bundle.zip` (streamed ZIP), and `/files/*` (serves local PDFs).
+- Storage is abstracted in `server/storage.js`: local filesystem by default (under `out/server-store/`, "signed URLs" point back at `/files`). If `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (Cursor secrets), it switches to real Supabase Storage uploads + time-limited signed URLs (bucket `SUPABASE_LOI_BUCKET`, default `loi`) — no code change needed.
+- `vite.config.js` proxies `/api` and `/files` to `http://localhost:8787`, so the front-end can call the service in dev. The in-process queue in `server/jobs.js` is the swap point for a real queue (Supabase Queues/pgmq, Inngest, Trigger.dev) to scale horizontally.
 
 ### Dev harness for the front-end (`Salvo.jsx`)
 A minimal Vite + React harness lives at the repo root (`index.html`, `src/main.jsx`, `vite.config.js`, `package.json`). It mounts `Salvo.jsx` unchanged — do not edit `Salvo.jsx` to make it run, edit the harness instead.

@@ -12,5 +12,10 @@ export default defineConfig({
     // Allow access through Cursor Cloud's per-pod preview URLs (….cursorvm.com)
     // in addition to localhost. A leading dot allows all subdomains.
     allowedHosts: [".cursorvm.com"],
+    // Forward API + stored-file requests to the LOI render service (npm run server).
+    proxy: {
+      "/api": "http://localhost:8787",
+      "/files": "http://localhost:8787",
+    },
   },
 });

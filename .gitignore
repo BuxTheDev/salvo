@@ -10,5 +10,5 @@ __pycache__/
 # Engine demo outputs
 examples/out_*.csv
 
-# Rendered LOI PDFs + manifest
+# Rendered LOI PDFs + manifest, and the render service's local store
 out/

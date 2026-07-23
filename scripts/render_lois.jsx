@@ -17,9 +17,8 @@ import { renderToFile } from "@react-pdf/renderer";
 import Papa from "papaparse";
 import React from "react";
 
-import {
-  SEED, autoMap, normalizeWithMap, underwrite, contactFor, buildExportRow, toCSV, keyOf, DEFAULTS,
-} from "../lib/engine.js";
+import { SEED, toCSV } from "../lib/engine.js";
+import { expandJobs, slugify } from "../lib/pipeline.js";
 import CreativeLOI from "../lib/loi/CreativeLOI.jsx";
 import CashLOI from "../lib/loi/CashLOI.jsx";
 
@@ -39,8 +38,6 @@ function parseArgs(argv) {
   }
   return a;
 }
-
-const slug = (str) => String(str || "property").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 48);
 
 async function pool(items, concurrency, worker) {
   const results = [];
@@ -71,31 +68,10 @@ async function main() {
   } else {
     rawRows = SEED;
   }
-  const mapping = autoMap(Object.keys(rawRows[0] || {}));
-  const norm = normalizeWithMap(rawRows, mapping);
-
-  const scored = norm.map((r) => {
-    const u = underwrite(r, DEFAULTS);
-    return { r, u, creativeOK: u.creative_ok, cashOK: u.cash_ok, contact: contactFor(r, target) };
-  });
-
-  // duplicate-contact counts among ready rows (mirrors the UI)
-  const isReady = (x) => offer === "creative" ? x.creativeOK : offer === "cash" ? x.cashOK : (x.creativeOK || x.cashOK);
-  const counts = new Map();
-  scored.forEach((x) => { if (isReady(x) && x.contact.email) { const k = keyOf(x.contact.email); counts.set(k, (counts.get(k) || 0) + 1); } });
-  const dupOf = (x) => (x.contact.email ? counts.get(keyOf(x.contact.email)) || 1 : 1);
-
-  // 2) Expand into one render job per ready property, honoring --copies.
-  //    A creative send is a single combined document (creative + appended cash,
-  //    matching the BrightPath template); a pure-cash row gets the cash LOI.
-  const jobs = [];
-  const readyRows = scored.filter(isReady);
-  for (let copy = 0; copy < args.copies; copy++) {
-    for (const x of readyRows) {
-      const kind = offer === "cash" ? "cash" : offer === "creative" ? "creative" : (x.creativeOK ? "creative" : "cash");
-      jobs.push({ x, template: kind, copy });
-    }
-  }
+  // 2) Expand into one render job per ready property (shared with the server).
+  //    A creative send is a single combined document (creative + appended cash);
+  //    a pure-cash row gets the standalone cash LOI.
+  const jobs = expandJobs(rawRows, { target, offer, copies: args.copies });
 
   if (!jobs.length) {
     console.log("No ready offers for the current mode — nothing to render.");
@@ -107,21 +83,20 @@ async function main() {
   fs.mkdirSync(outDir, { recursive: true });
 
   console.log(`Salvo LOI batch — target=${target} offer=${offer} copies=${args.copies} concurrency=${args.concurrency}`);
-  console.log(`  ${readyRows.length} ready properties -> ${jobs.length} PDF(s) into ${path.relative(ROOT, outDir)}/`);
+  console.log(`  ${jobs.length} PDF(s) into ${path.relative(ROOT, outDir)}/`);
 
   const t0 = Date.now();
 
   // 3) Render each PDF (concurrency-limited) and collect manifest rows.
   const manifest = await pool(jobs, args.concurrency, async (job, i) => {
-    const d = buildExportRow(job.x, target, job.template, dupOf(job.x));
+    const d = job.d;
     const seq = String(i + 1).padStart(4, "0");
-    const suffix = args.copies > 1 ? `-${job.copy + 1}` : "";
-    const file = `${seq}-${slug(d.Address)}${suffix}-${job.template}.pdf`;
-    const element = job.template === "creative"
+    const file = `${seq}-${slugify(d.Address)}-${job.kind}.pdf`;
+    const element = job.kind === "creative"
       ? React.createElement(CreativeLOI, { d })
       : React.createElement(CashLOI, { d });
     await renderToFile(element, path.join(outDir, file));
-    return { ...d, "LOI Template": job.template === "creative" ? "Creative + Cash" : "Cash", "LOI File": file };
+    return { ...d, "LOI Template": job.kind === "creative" ? "Creative + Cash" : "Cash", "LOI File": file };
   });
 
   // 4) Write the clean manifest CSV that references every PDF.
