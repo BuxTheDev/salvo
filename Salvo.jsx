@@ -1,10 +1,14 @@
 import React, { useState, useMemo, useRef } from "react";
 import Papa from "papaparse";
+import { pdf } from "@react-pdf/renderer";
+import JSZip from "jszip";
 import {
   SEED, SPEC, FIELD_ORDER, autoMap, fileReport, normalizeWithMap, enrich, keyOf,
   underwrite, contactFor, usd, usdk, mean, fmtPhone,
   TARGETS, OFFERS, TARGET_LABEL, DEFAULTS, buildExportRow, toCSV,
 } from "./lib/engine.js";
+import CreativeLOI from "./lib/loi/CreativeLOI.jsx";
+import CashLOI from "./lib/loi/CashLOI.jsx";
 
 /* =========================================================================
    SALVO — fire the whole list.
@@ -15,6 +19,11 @@ import {
    so it is shared with the batch PDF/CSV pipeline (scripts/render_lois.jsx).
    ========================================================================= */
 
+const slugify = (str) => String(str || "property").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 48);
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
 function download(text, name) {
   const blob = new Blob([text], { type: "text/csv;charset=utf-8;" }); const url = URL.createObjectURL(blob);
   const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -34,6 +43,7 @@ export default function Salvo() {
   const [s, setS] = useState(DEFAULTS);
   const [sel, setSel] = useState(() => new Set());
   const [showBlast, setShowBlast] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
   const [note, setNote] = useState(null);
   const fileRef = useRef(); const enrichRef = useRef();
   const setKey = (k, v) => setS((p) => ({ ...p, [k]: v }));
@@ -87,6 +97,36 @@ export default function Salvo() {
     if (!rows.length) return;
     download(toCSV(rows), `salvo_${target}_${offer}_${rows.length}.csv`);
     setNote(`Exported ${rows.length}-row CSV — ${OFFERS[offer]} · ${TARGET_LABEL[target]}. Import to GHL, map columns to custom fields, fire the "Offer Ready" workflow.`);
+  };
+  const doBlastPDF = async () => {
+    const chosen = scored.filter((x) => sel.has(x.r.address) && x.ready);
+    if (!chosen.length || pdfBusy) return;
+    setPdfBusy(true);
+    try {
+      const zip = new JSZip();
+      const manifest = [];
+      for (let i = 0; i < chosen.length; i++) {
+        const x = chosen[i];
+        setNote(`Rendering LOIs… ${i + 1}/${chosen.length}`);
+        // A creative send is one combined document (creative + appended cash);
+        // a pure-cash row gets the standalone cash LOI.
+        const kind = offer === "cash" ? "cash" : offer === "creative" ? "creative" : (x.creativeOK ? "creative" : "cash");
+        const d = buildExportRow(x, target, kind, x.dup);
+        const file = `${String(i + 1).padStart(3, "0")}-${slugify(d.Address)}-${kind}.pdf`;
+        const element = kind === "creative" ? <CreativeLOI d={d} /> : <CashLOI d={d} />;
+        const blob = await pdf(element).toBlob();
+        zip.file(file, blob);
+        manifest.push({ ...d, "LOI Template": kind === "creative" ? "Creative + Cash" : "Cash", "LOI File": file });
+      }
+      zip.file("manifest.csv", toCSV(manifest));
+      const out = await zip.generateAsync({ type: "blob" });
+      downloadBlob(out, `salvo_lois_${target}_${offer}_${chosen.length}.zip`);
+      setNote(`Generated ${chosen.length} LOI PDF${chosen.length === 1 ? "" : "s"} + manifest.csv — downloaded as a ZIP. Creative sends include the cash offer as an appended page.`);
+    } catch (e) {
+      setNote(`PDF generation failed: ${e.message}`);
+    } finally {
+      setPdfBusy(false);
+    }
   };
   const firstSel = scored.find((x) => sel.has(x.r.address) && x.ready);
   const bothMode = off === "both";
@@ -174,7 +214,10 @@ export default function Salvo() {
         <main className="sv-list">
           <div className="sv-toolbar">
             <div><button className="sv-btn ghost" onClick={selectAll}>Select all ready</button><button className="sv-btn ghost" onClick={clearSel}>Clear</button><button className="sv-btn ghost" onClick={() => setShowBlast((v) => !v)} disabled={!sel.size}>{showBlast ? "Hide mapping" : "Preview mapping"}</button></div>
-            <button className="sv-btn primary" disabled={!sel.size} onClick={doBlast}>⬇ Blast {sel.size} → CSV</button>
+            <div className="sv-blastbtns">
+              <button className="sv-btn pdf" disabled={!sel.size || pdfBusy} onClick={doBlastPDF}>{pdfBusy ? "Rendering…" : `⬇ Generate ${sel.size} LOI PDF${sel.size === 1 ? "" : "s"}`}</button>
+              <button className="sv-btn primary" disabled={!sel.size || pdfBusy} onClick={doBlast}>⬇ Blast {sel.size} → CSV</button>
+            </div>
           </div>
           {note && <div className="sv-note">{note}</div>}
           <div className="sv-tablewrap">
@@ -324,6 +367,8 @@ const css = `
 .sv-btn:active{ transform:scale(.98); }
 .sv-btn.ghost{ background:#fbfcfd; color:var(--ink-2); margin-right:6px; } .sv-btn.ghost:hover:not(:disabled){ background:#eef1f4; color:var(--ink); border-color:#c2c9d1; } .sv-btn.ghost:disabled{ opacity:.4; cursor:not-allowed; }
 .sv-btn.primary{ background:var(--gold); color:#2a1206; border-color:var(--gold); font-weight:600; box-shadow:0 2px 8px rgba(232,106,42,.32); } .sv-btn.primary:hover:not(:disabled){ filter:brightness(1.05); box-shadow:0 4px 14px rgba(232,106,42,.42); } .sv-btn.primary:disabled{ opacity:.4; cursor:not-allowed; box-shadow:none; }
+.sv-blastbtns{ display:flex; gap:8px; align-items:center; }
+.sv-btn.pdf{ background:var(--ink); color:#fff; border-color:var(--ink); font-weight:600; } .sv-btn.pdf:hover:not(:disabled){ background:#2a333c; } .sv-btn.pdf:disabled{ opacity:.4; cursor:not-allowed; }
 .sv-note{ background:#e3f3ec; border:1px solid #bfe3d1; color:#0f5b3f; border-radius:9px; padding:10px 13px; font-size:12px; margin-bottom:11px; line-height:1.5; }
 .sv-empty{ text-align:center; color:var(--ink-2); font-size:12.5px; padding:34px 16px; line-height:1.6; }
 .sv-tablewrap{ overflow-x:auto; border:1px solid var(--line); border-radius:11px; }
