@@ -9,11 +9,11 @@
 import { createClient } from "@supabase/supabase-js";
 
 const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY;
 const bucket = process.env.SUPABASE_LOI_BUCKET || "loi";
 
 if (!url || !key) {
-  console.log("Supabase env not present in this session (need SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY).");
+  console.log("Supabase env not present in this session (need SUPABASE_URL + a service/secret key).");
   console.log("Secrets are injected into a NEW agent session, so run this after the environment restarts.");
   process.exit(2);
 }

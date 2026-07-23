@@ -78,7 +78,8 @@ function supabaseDriver(url, serviceKey) {
   };
 }
 
+// Accept the classic service-role key or the newer Supabase secret key naming.
 const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY;
 export const storage = url && key ? supabaseDriver(url, key) : localDriver();
 export const storageKind = storage.kind;
