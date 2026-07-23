@@ -2,6 +2,11 @@
 node_modules/
 dist/
 
+# Next.js / Vercel
+.next/
+.vercel/
+next-env.d.ts
+
 # Python
 .venv/
 __pycache__/

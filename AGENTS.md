@@ -23,6 +23,12 @@ The full Next.js app described in `SALVO_BUILD.md` is **not scaffolded yet**. Un
 - Storage is abstracted in `server/storage.js`: local filesystem by default (under `out/server-store/`, "signed URLs" point back at `/files`). If `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set (Cursor secrets), it switches to real Supabase Storage uploads + time-limited signed URLs (bucket `SUPABASE_LOI_BUCKET`, default `loi`) — no code change needed.
 - `vite.config.js` proxies `/api` and `/files` to `http://localhost:8787`, so the front-end can call the service in dev. The in-process queue in `server/jobs.js` is the swap point for a real queue (Supabase Queues/pgmq, Inngest, Trigger.dev) to scale horizontally.
 
+### Next.js app (deployable, Vercel) — `app/`
+- The deployable product is a Next.js (App Router) app that reuses the shared code: `app/page.jsx` renders the `Salvo.jsx` console client-side (dynamic import, `ssr:false`), and `app/api/render-jobs/route.js` (Node runtime) renders LOIs server-side via `lib/pipeline` + `server/render` + `server/storage`, returning a manifest with signed URLs (uploads to Supabase when its env is set).
+- Run: `npm run next:dev` (port 3000), build: `npm run next:build`. `@react-pdf/renderer` is in `serverExternalPackages` (next.config.mjs).
+- Deploy: Vercel (framework `nextjs`, see `vercel.json`). Set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` (and optional `SUPABASE_LOI_BUCKET`) in the Vercel project's env. Serverless functions have a max duration (10s hobby / longer on Pro), so the in-request render suits interactive batches; large batches should use the queue/worker in `server/`.
+- Note: the Vite harness (`npm run dev`) and the standalone Express service (`npm run server`) still exist for local prototyping/scale reference; the Next.js app is the thing that deploys.
+
 ### Dev harness for the front-end (`Salvo.jsx`)
 A minimal Vite + React harness lives at the repo root (`index.html`, `src/main.jsx`, `vite.config.js`, `package.json`). It mounts `Salvo.jsx` unchanged — do not edit `Salvo.jsx` to make it run, edit the harness instead.
 - Dev server: `npm run dev` → http://localhost:5173 (see `package.json` scripts for build/preview).
