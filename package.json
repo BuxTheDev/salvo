@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "render:lois": "tsx scripts/render_lois.jsx",
     "server": "tsx server/index.js",
-    "server:dev": "tsx watch server/index.js"
+    "server:dev": "tsx watch server/index.js",
+    "supabase:check": "node scripts/supabase_check.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.5.1",
